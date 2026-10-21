@@ -78,18 +78,18 @@ button.ghost{background:none;border:1px solid var(--line);color:var(--muted);bor
 const PERSONAS=[
  {id:"advocate",name:"The Advocate",color:"#e8a33d",
   brief:"Argue the strongest possible case FOR the bold, optimistic read of the question. Steelman the ambitious option. Be persuasive, concrete, and upbeat without being naive.",
-  orModel:"google/gemini-2.0-flash-exp:free",orLabel:"Gemini 2.0 Flash"},
+  orModel:"google/gemma-4-31b-it:free",orLabel:"Gemma 4 31B"},
  {id:"skeptic",name:"The Skeptic",color:"#b4552d",
   brief:"Attack weak assumptions. Hunt for flaws, hidden costs, failure modes and motivated reasoning. You are not negative for sport — you are the quality filter. Be sharp and specific.",
-  orModel:"deepseek/deepseek-chat-v3.1:free",orLabel:"DeepSeek V3"},
+  orModel:"nvidia/nemotron-3-super-120b-a12b:free",orLabel:"Nemotron 3 Super 120B"},
  {id:"pragmatist",name:"The Pragmatist",color:"#7a8b6f",
   brief:"Care only about what actually works in the real world: money, time, effort, trade-offs, second-order effects. Translate big ideas into the version a busy person can execute this week.",
-  orModel:"meta-llama/llama-3.3-70b-instruct:free",orLabel:"Llama 3.3 70B"},
+  orModel:"minimax/minimax-m3.1-flash:free",orLabel:"MiniMax M3.1 Flash"},
  {id:"wildcard",name:"The Wildcard",color:"#9b7fc0",
   brief:"Reframe the question. Offer the unconventional angle nobody at the table sees — the third option, the inversion, the historical parallel. Surprising but genuinely useful, never random.",
-  orModel:"qwen/qwen-2.5-72b-instruct:free",orLabel:"Qwen 2.5 72B"}
+  orModel:"openrouter/free",orLabel:"Free Router (rotates)"}
 ];
-const CHAIR_OR="meta-llama/llama-3.3-70b-instruct:free";
+const CHAIR_OR="openrouter/free";
 const $=id=>document.getElementById(id);
 let settings={orKey:""};
 try{settings=Object.assign(settings,JSON.parse(localStorage.getItem("roundtable.settings.v1")||"{}"))}catch(e){}
