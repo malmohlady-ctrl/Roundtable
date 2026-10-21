@@ -1,6 +1,6 @@
 /* Roundtable service worker — cache-first offline shell. API calls (POST,
    other origins) are never intercepted. */
-const CACHE = "roundtable-v2";
+const CACHE = "roundtable-v3";
 const ASSETS = ["./", "index.html", "manifest.json",
   "icon-192.png", "icon-512.png", "icon-maskable-512.png"];
 self.addEventListener("install", (e) => {
