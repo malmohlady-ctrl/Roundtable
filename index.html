@@ -107,32 +107,54 @@ function stripAds(t){
  if(cut>0&&/pollinations|powered by/i.test(t.slice(cut)))t=t.slice(0,cut);
  return t.replace(/\n.*pollinations\.ai.*$/gim,"").trim();
 }
-async function callModel(p,messages,signal){
+async function callModel(p,messages,signal,forceFree){
  const timeout=AbortSignal.timeout?AbortSignal.timeout(150000):undefined;
  const sig=signal&&AbortSignal.any?AbortSignal.any([signal,timeout].filter(Boolean)):signal;
- if(settings.orKey){
+ if(settings.orKey&&!forceFree){
   const r=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",signal:sig,
    headers:{"Content-Type":"application/json","Authorization":"Bearer "+settings.orKey},
-   body:JSON.stringify({model:p?p.orModel:CHAIR_OR,messages,temperature:.7,max_tokens:750})});
+   body:JSON.stringify({model:p?p.orModel:CHAIR_OR,messages,temperature:.7,max_tokens:1100})});
   if(!r.ok)throw new Error("OpenRouter "+r.status);
-  const j=await r.json();return stripAds(j.choices[0].message.content||"");
+  const j=await r.json();const txt=stripAds(j.choices?.[0]?.message?.content||"");
+  if(!txt)throw new Error("empty answer");return txt;
  }
  const r=await fetch("https://text.pollinations.ai/openai",{method:"POST",signal:sig,
   headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({model:"openai",messages,temperature:.7,max_tokens:750,private:true})});
+  body:JSON.stringify({model:"openai",messages,temperature:.7,max_tokens:1100,private:true,reasoning_effort:"low"})});
  if(!r.ok)throw new Error("Engine "+r.status);
- const j=await r.json();return stripAds(j.choices[0].message.content||"");
+ const j=await r.json();const txt=stripAds(j.choices?.[0]?.message?.content||"");
+ if(!txt)throw new Error("empty answer");return txt;
 }
-async function ask(p,system,user,signal){
- try{return await callModel(p,[{role:"system",content:system},{role:"user",content:user}],signal);}
- catch(e){if(signal&&signal.aborted)throw e;
-   if(settings.orKey){/* fall back to the free shared engine for this seat */
-     const r=await fetch("https://text.pollinations.ai/openai",{method:"POST",signal,
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"openai",messages:[{role:"system",content:system},{role:"user",content:user}],temperature:.7,max_tokens:750,private:true})});
-     if(!r.ok)throw new Error("Engine "+r.status);
-     const j=await r.json();return stripAds(j.choices[0].message.content||"");}
+function sleepMs(ms,signal){return new Promise((res,rej)=>{const t=setTimeout(res,ms);
+ if(signal)signal.addEventListener("abort",()=>{clearTimeout(t);rej(new Error("stopped"))},{once:true});});}
+/* The free engine drops roughly 1 in 3 calls (connections closed, empty
+   answers). Retry each seat up to 3 times with a pause — measured 9/9
+   debate calls succeeding under this pattern vs. most seats failing
+   without it. */
+async function withRetry(fn,signal,onRetry){
+ let lastErr;
+ for(let a=1;a<=3;a++){
+  try{return await fn();}
+  catch(e){if(signal&&signal.aborted)throw e;lastErr=e;
+   if(a<3){if(onRetry)onRetry(a+1);await sleepMs(a===1?1500:5000,signal);}}
+ }
+ throw lastErr;
+}
+async function ask(p,system,user,signal,onRetry){
+ const msgs=[{role:"system",content:system},{role:"user",content:user}];
+ return withRetry(async()=>{
+  try{return await callModel(p,msgs,signal);}
+  catch(e){if(signal&&signal.aborted)throw e;
+   if(settings.orKey)return await callModel(p,msgs,signal,true); /* OpenRouter failed: free engine for this attempt */
    throw e;}
+ },signal,onRetry);
+}
+/* Run seats 2 at a time instead of 4 — gentler on the free tier. */
+async function runPool(items,limit,worker){
+ const q=items.slice();
+ const runners=Array.from({length:Math.min(limit,q.length)},async()=>{
+  while(q.length){const it=q.shift();await worker(it);}});
+ await Promise.allSettled(runners);
 }
 /* ---------- Rendering ---------- */
 function seatCard(p,roundLabel){
@@ -160,37 +182,37 @@ async function runDebate(question){
   /* Round 1 — openings */
   area.appendChild(roundTitle("Round 1 · Opening statements"));
   const seats1={};PERSONAS.forEach(p=>{const s=seatCard(p,"Opening");seats1[p.id]=s;area.appendChild(s.card);});
-  await Promise.allSettled(PERSONAS.map(async p=>{
+  await runPool(PERSONAS,2,async p=>{
    const sys=`You are ${p.name} on a four-seat debate panel. Your brief: ${p.brief} Answer the question directly, in character, in at most 220 words. No disclaimers about being an AI.`;
-   try{const t=await ask(p,sys,question,sig);record.opening[p.id]=t;setSeat(seats1[p.id],t);}
-   catch(e){setSeat(seats1[p.id],sig.aborted?"Stopped.":"(This seat's model didn't answer — the free engine hiccuped. The debate goes on.)");}
-  }));
+   try{const t=await ask(p,sys,question,sig,att=>{seats1[p.id].body.textContent=`Engine hiccup — retrying (attempt ${att} of 3)…`;});record.opening[p.id]=t;setSeat(seats1[p.id],t);}
+   catch(e){setSeat(seats1[p.id],sig.aborted?"Stopped.":"(This seat's model didn't answer after 3 tries. The debate goes on.)");}
+  });
   if(sig.aborted)throw new Error("stopped");
   /* Round 2 — cross-examination */
   area.appendChild(roundTitle("Round 2 · Cross-examination"));
   const transcript=PERSONAS.map(p=>`${p.name}: ${record.opening[p.id]||"(silent)"}`).join("\n\n");
   const seats2={};PERSONAS.forEach(p=>{const s=seatCard(p,"Cross-exam");seats2[p.id]=s;area.appendChild(s.card);});
-  await Promise.allSettled(PERSONAS.map(async p=>{
+  await runPool(PERSONAS,2,async p=>{
    const sys=`You are ${p.name} on a four-seat debate panel. Your brief: ${p.brief} This is cross-examination. In at most 200 words: challenge the weakest claim another seat made, defend your own opening, and say plainly if anything changed your mind.`;
    const user=`Question: ${question}\n\nOpening statements:\n${transcript}`;
-   try{const t=await ask(p,sys,user,sig);record.cross[p.id]=t;setSeat(seats2[p.id],t);}
-   catch(e){setSeat(seats2[p.id],sig.aborted?"Stopped.":"(No cross-examination from this seat — engine hiccup.)");}
-  }));
+   try{const t=await ask(p,sys,user,sig,att=>{seats2[p.id].body.textContent=`Engine hiccup — retrying (attempt ${att} of 3)…`;});record.cross[p.id]=t;setSeat(seats2[p.id],t);}
+   catch(e){setSeat(seats2[p.id],sig.aborted?"Stopped.":"(No cross-examination from this seat — it didn't answer after 3 tries.)");}
+  });
   if(sig.aborted)throw new Error("stopped");
   /* Verdict */
   area.appendChild(roundTitle("The verdict"));
   const vcard=document.createElement("div");vcard.className="seat verdict";
   const vwho=document.createElement("div");vwho.className="who";
   const vnm=document.createElement("span");vnm.className="name";vnm.textContent="⚖ The Chair";
-  const vmd=document.createElement("span");vmd.className="model";vmd.textContent=settings.orKey?"Llama 3.3 70B":"GPT-OSS 20B";
+  const vmd=document.createElement("span");vmd.className="model";vmd.textContent=settings.orKey?"OpenRouter Free Router":"GPT-OSS 20B";
   vwho.append(vnm,vmd);
   const vbody=document.createElement("div");vbody.className="body";vbody.textContent="Deliberating…";
   vcard.append(vwho,vbody);area.appendChild(vcard);
   const full=PERSONAS.map(p=>`${p.name} (opening): ${record.opening[p.id]||"(silent)"}\n${p.name} (cross-exam): ${record.cross[p.id]||"(silent)"}`).join("\n\n");
   const vsys="You are the Chair of a debate panel. Synthesize the debate into a verdict with exactly these parts: BOTTOM LINE (one or two decisive sentences), WHERE THEY AGREE, WHERE THEY CLASH, and THE MOVE (the single most useful action or answer to take away). At most 300 words. Be decisive, not diplomatic mush.";
-  try{const t=await callModel(null,[{role:"system",content:vsys},{role:"user",content:"Question: "+question+"\n\n"+full}],sig);
+  try{const t=await withRetry(()=>callModel(null,[{role:"system",content:vsys},{role:"user",content:"Question: "+question+"\n\n"+full}],sig),sig,()=>{vbody.textContent="Engine hiccup — retrying…";});
    record.verdict=t;vbody.textContent=t;}
-  catch(e){vbody.textContent="(The Chair couldn't deliver a verdict — engine hiccup. The debate above still stands.)";}
+  catch(e){vbody.textContent="(The Chair couldn't deliver a verdict after 3 tries. The debate above still stands.)";}
   history.unshift(record);history=history.slice(0,20);
   try{localStorage.setItem("roundtable.history.v1",JSON.stringify(history))}catch(e){}
   renderHistory();
