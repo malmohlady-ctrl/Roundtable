@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16130e">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Roundtable</title>
+<style>
+:root{--bg:#16130e;--card:#221c14;--ink:#f2ead8;--muted:#a89a83;--primary:#e8a33d;--line:#38301f;--rust:#b4552d;--sage:#7a8b6f;--plum:#9b7fc0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:22px 18px 16px;max-width:760px;margin:auto;display:flex;gap:12px;align-items:center}
+header .mark{flex:none}header h1{font-size:26px;margin:0;letter-spacing:.04em;font-weight:900;text-transform:uppercase}
+header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+header .gear{margin-left:auto;background:none;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:8px 12px;cursor:pointer;font-size:15px}
+main{padding:0 14px 30px;max-width:760px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:13px}
+textarea{width:100%;min-height:74px;background:#171208;border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:12px;font:inherit;resize:vertical}
+button.go{width:100%;margin-top:10px;background:var(--primary);color:#171208;border:0;border-radius:12px;padding:14px;font-weight:900;font-size:16px;letter-spacing:.03em;cursor:pointer;text-transform:uppercase}
+button.go:disabled{opacity:.45;cursor:not-allowed}
+button.stop{width:100%;margin-top:8px;background:none;border:1px solid var(--rust);color:var(--rust);border-radius:12px;padding:11px;font-weight:700;cursor:pointer}
+.small{font-size:13px}.muted{color:var(--muted)}
+.round-title{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--primary);font-weight:800;margin:18px 0 4px}
+.seat{border:1px solid var(--line);border-left:5px solid var(--muted);border-radius:12px;padding:12px 14px;margin-top:10px;background:#1b1610}
+.seat .who{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+.seat .dot{width:11px;height:11px;border-radius:50%;flex:none;align-self:center}
+.seat .name{font-weight:800}
+.seat .model{font-size:12px;color:var(--muted)}
+.seat .body{white-space:pre-wrap;font-size:15px}
+.seat.loading .body{color:var(--muted);font-style:italic}
+.verdict{border:1px solid var(--primary);background:#241b0d}
+input[type=password],input[type=text]{width:100%;padding:11px;border:1px solid var(--line);border-radius:11px;background:#171208;color:var(--ink);font:inherit}
+.hist{padding:10px 4px;border-top:1px solid var(--line);cursor:pointer}
+.hist:first-of-type{border-top:0}
+.hist .q{font-weight:700}.hist .when{font-size:12px;color:var(--muted)}
+.rowbtns{display:flex;gap:8px}.rowbtns button{flex:1}
+button.ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:10px;cursor:pointer;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+<svg class="mark" width="42" height="42" viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="256" r="150" fill="none" stroke="#e8a33d" stroke-width="30"/><circle cx="256" cy="66" r="42" fill="#e8a33d"/><circle cx="446" cy="256" r="42" fill="#f2ead8"/><circle cx="256" cy="446" r="42" fill="#b4552d"/><circle cx="66" cy="256" r="42" fill="#7a8b6f"/></svg>
+<div><h1>Roundtable</h1><p>Ask once. Watch them argue.</p></div>
+<button class="gear" id="gearBtn" aria-label="Settings">⚙</button>
+</header>
+<main>
+<section class="card" id="settingsCard" style="display:none">
+<h3 style="margin-top:0">Settings</h3>
+<p class="small muted">Out of the box, the panel runs on a free shared engine (GPT-OSS 20B) wearing four different briefs — no account, no cost. For a true multi-model panel, paste a free <b>OpenRouter</b> key (openrouter.ai — free account, no card). The key stays on this phone only.</p>
+<label class="small" for="orKey" style="font-weight:700">OpenRouter API key</label>
+<input type="password" id="orKey" placeholder="sk-or-…" autocomplete="off" style="margin-top:6px">
+<div class="rowbtns" style="margin-top:10px"><button class="ghost" id="saveKey">Save</button><button class="ghost" id="clearKey">Remove</button></div>
+<p class="small muted" id="engineStatus" style="margin-bottom:0"></p>
+</section>
+
+<section class="card">
+<label for="q" style="font-weight:800">Put a question to the table</label>
+<textarea id="q" placeholder="Should I…? What's the best way to…? Argue it out."></textarea>
+<button class="go" id="goBtn">Start the debate</button>
+<button class="stop" id="stopBtn" style="display:none">Stop</button>
+<p class="small muted" id="panelInfo" style="margin-bottom:0"></p>
+</section>
+
+<div id="debateArea"></div>
+
+<section class="card" id="historyCard" style="display:none">
+<h3 style="margin-top:0">Past debates</h3>
+<div id="historyList"></div>
+<button class="ghost" id="clearHist" style="margin-top:10px;width:100%">Clear history</button>
+</section>
+<p class="small muted" style="text-align:center">Free models think slowly — a full debate can take a couple of minutes. Everything runs from this page; your question goes only to the model providers.</p>
+</main>
+<script>
+"use strict";
+/* ---------- Panel ---------- */
+const PERSONAS=[
+ {id:"advocate",name:"The Advocate",color:"#e8a33d",
+  brief:"Argue the strongest possible case FOR the bold, optimistic read of the question. Steelman the ambitious option. Be persuasive, concrete, and upbeat without being naive.",
+  orModel:"google/gemini-2.0-flash-exp:free",orLabel:"Gemini 2.0 Flash"},
+ {id:"skeptic",name:"The Skeptic",color:"#b4552d",
+  brief:"Attack weak assumptions. Hunt for flaws, hidden costs, failure modes and motivated reasoning. You are not negative for sport — you are the quality filter. Be sharp and specific.",
+  orModel:"deepseek/deepseek-chat-v3.1:free",orLabel:"DeepSeek V3"},
+ {id:"pragmatist",name:"The Pragmatist",color:"#7a8b6f",
+  brief:"Care only about what actually works in the real world: money, time, effort, trade-offs, second-order effects. Translate big ideas into the version a busy person can execute this week.",
+  orModel:"meta-llama/llama-3.3-70b-instruct:free",orLabel:"Llama 3.3 70B"},
+ {id:"wildcard",name:"The Wildcard",color:"#9b7fc0",
+  brief:"Reframe the question. Offer the unconventional angle nobody at the table sees — the third option, the inversion, the historical parallel. Surprising but genuinely useful, never random.",
+  orModel:"qwen/qwen-2.5-72b-instruct:free",orLabel:"Qwen 2.5 72B"}
+];
+const CHAIR_OR="meta-llama/llama-3.3-70b-instruct:free";
+const $=id=>document.getElementById(id);
+let settings={orKey:""};
+try{settings=Object.assign(settings,JSON.parse(localStorage.getItem("roundtable.settings.v1")||"{}"))}catch(e){}
+let history=[];try{history=JSON.parse(localStorage.getItem("roundtable.history.v1")||"[]")}catch(e){}
+let aborter=null,busy=false;
+
+function engineLabel(p){return settings.orKey?p.orLabel:"GPT-OSS 20B (shared engine)"}
+function panelInfo(){
+ $("engineStatus").textContent=settings.orKey?"Engine: OpenRouter — each seat is a different model.":"Engine: free shared engine — four briefs, one model (GPT-OSS 20B). Add an OpenRouter key for a true multi-model panel.";
+ $("panelInfo").textContent="Panel: "+PERSONAS.map(p=>p.name+" · "+engineLabel(p)).join("  |  ");
+}
+function stripAds(t){
+ if(!t)return t;
+ const cut=t.search(/\n-{3,}\n/);
+ if(cut>0&&/pollinations|powered by/i.test(t.slice(cut)))t=t.slice(0,cut);
+ return t.replace(/\n.*pollinations\.ai.*$/gim,"").trim();
+}
+async function callModel(p,messages,signal){
+ const timeout=AbortSignal.timeout?AbortSignal.timeout(150000):undefined;
+ const sig=signal&&AbortSignal.any?AbortSignal.any([signal,timeout].filter(Boolean)):signal;
+ if(settings.orKey){
+  const r=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",signal:sig,
+   headers:{"Content-Type":"application/json","Authorization":"Bearer "+settings.orKey},
+   body:JSON.stringify({model:p?p.orModel:CHAIR_OR,messages,temperature:.7,max_tokens:750})});
+  if(!r.ok)throw new Error("OpenRouter "+r.status);
+  const j=await r.json();return stripAds(j.choices[0].message.content||"");
+ }
+ const r=await fetch("https://text.pollinations.ai/openai",{method:"POST",signal:sig,
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({model:"openai",messages,temperature:.7,max_tokens:750,private:true})});
+ if(!r.ok)throw new Error("Engine "+r.status);
+ const j=await r.json();return stripAds(j.choices[0].message.content||"");
+}
+async function ask(p,system,user,signal){
+ try{return await callModel(p,[{role:"system",content:system},{role:"user",content:user}],signal);}
+ catch(e){if(signal&&signal.aborted)throw e;
+   if(settings.orKey){/* fall back to the free shared engine for this seat */
+     const r=await fetch("https://text.pollinations.ai/openai",{method:"POST",signal,
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"openai",messages:[{role:"system",content:system},{role:"user",content:user}],temperature:.7,max_tokens:750,private:true})});
+     if(!r.ok)throw new Error("Engine "+r.status);
+     const j=await r.json();return stripAds(j.choices[0].message.content||"");}
+   throw e;}
+}
+/* ---------- Rendering ---------- */
+function seatCard(p,roundLabel){
+ const d=document.createElement("div");d.className="seat";d.style.borderLeftColor=p.color;
+ const who=document.createElement("div");who.className="who";
+ const dot=document.createElement("span");dot.className="dot";dot.style.background=p.color;
+ const nm=document.createElement("span");nm.className="name";nm.textContent=p.name;
+ const md=document.createElement("span");md.className="model";md.textContent=roundLabel+" · "+engineLabel(p);
+ who.append(dot,nm,md);
+ const body=document.createElement("div");body.className="body";body.textContent="Thinking…";
+ d.classList.add("loading");d.append(who,body);
+ return{card:d,body};
+}
+function roundTitle(text){
+ const h=document.createElement("div");h.className="round-title";h.textContent=text;return h;
+}
+function setSeat(seat,text){seat.card.classList.remove("loading");seat.body.textContent=text||"(no answer — the model returned nothing)";}
+async function runDebate(question){
+ busy=true;$("goBtn").disabled=true;$("stopBtn").style.display="block";
+ aborter=new AbortController();const sig=aborter.signal;
+ const area=$("debateArea");area.innerHTML="";
+ const qt=document.createElement("div");qt.className="round-title";qt.style.color="var(--ink)";qt.textContent="❝ "+question;area.appendChild(qt);
+ const record={q:question,ts:Date.now(),opening:{},cross:{},verdict:""};
+ try{
+  /* Round 1 — openings */
+  area.appendChild(roundTitle("Round 1 · Opening statements"));
+  const seats1={};PERSONAS.forEach(p=>{const s=seatCard(p,"Opening");seats1[p.id]=s;area.appendChild(s.card);});
+  await Promise.allSettled(PERSONAS.map(async p=>{
+   const sys=`You are ${p.name} on a four-seat debate panel. Your brief: ${p.brief} Answer the question directly, in character, in at most 220 words. No disclaimers about being an AI.`;
+   try{const t=await ask(p,sys,question,sig);record.opening[p.id]=t;setSeat(seats1[p.id],t);}
+   catch(e){setSeat(seats1[p.id],sig.aborted?"Stopped.":"(This seat's model didn't answer — the free engine hiccuped. The debate goes on.)");}
+  }));
+  if(sig.aborted)throw new Error("stopped");
+  /* Round 2 — cross-examination */
+  area.appendChild(roundTitle("Round 2 · Cross-examination"));
+  const transcript=PERSONAS.map(p=>`${p.name}: ${record.opening[p.id]||"(silent)"}`).join("\n\n");
+  const seats2={};PERSONAS.forEach(p=>{const s=seatCard(p,"Cross-exam");seats2[p.id]=s;area.appendChild(s.card);});
+  await Promise.allSettled(PERSONAS.map(async p=>{
+   const sys=`You are ${p.name} on a four-seat debate panel. Your brief: ${p.brief} This is cross-examination. In at most 200 words: challenge the weakest claim another seat made, defend your own opening, and say plainly if anything changed your mind.`;
+   const user=`Question: ${question}\n\nOpening statements:\n${transcript}`;
+   try{const t=await ask(p,sys,user,sig);record.cross[p.id]=t;setSeat(seats2[p.id],t);}
+   catch(e){setSeat(seats2[p.id],sig.aborted?"Stopped.":"(No cross-examination from this seat — engine hiccup.)");}
+  }));
+  if(sig.aborted)throw new Error("stopped");
+  /* Verdict */
+  area.appendChild(roundTitle("The verdict"));
+  const vcard=document.createElement("div");vcard.className="seat verdict";
+  const vwho=document.createElement("div");vwho.className="who";
+  const vnm=document.createElement("span");vnm.className="name";vnm.textContent="⚖ The Chair";
+  const vmd=document.createElement("span");vmd.className="model";vmd.textContent=settings.orKey?"Llama 3.3 70B":"GPT-OSS 20B";
+  vwho.append(vnm,vmd);
+  const vbody=document.createElement("div");vbody.className="body";vbody.textContent="Deliberating…";
+  vcard.append(vwho,vbody);area.appendChild(vcard);
+  const full=PERSONAS.map(p=>`${p.name} (opening): ${record.opening[p.id]||"(silent)"}\n${p.name} (cross-exam): ${record.cross[p.id]||"(silent)"}`).join("\n\n");
+  const vsys="You are the Chair of a debate panel. Synthesize the debate into a verdict with exactly these parts: BOTTOM LINE (one or two decisive sentences), WHERE THEY AGREE, WHERE THEY CLASH, and THE MOVE (the single most useful action or answer to take away). At most 300 words. Be decisive, not diplomatic mush.";
+  try{const t=await callModel(null,[{role:"system",content:vsys},{role:"user",content:"Question: "+question+"\n\n"+full}],sig);
+   record.verdict=t;vbody.textContent=t;}
+  catch(e){vbody.textContent="(The Chair couldn't deliver a verdict — engine hiccup. The debate above still stands.)";}
+  history.unshift(record);history=history.slice(0,20);
+  try{localStorage.setItem("roundtable.history.v1",JSON.stringify(history))}catch(e){}
+  renderHistory();
+ }catch(e){/* stopped or failed — partial debate stays on screen */}
+ busy=false;$("goBtn").disabled=false;$("stopBtn").style.display="none";
+}
+function renderRecord(rec){
+ const area=$("debateArea");area.innerHTML="";
+ const qt=document.createElement("div");qt.className="round-title";qt.style.color="var(--ink)";qt.textContent="❝ "+rec.q;area.appendChild(qt);
+ area.appendChild(roundTitle("Round 1 · Opening statements"));
+ PERSONAS.forEach(p=>{if(rec.opening[p.id]){const s=seatCard(p,"Opening");setSeat(s,rec.opening[p.id]);area.appendChild(s.card);}});
+ area.appendChild(roundTitle("Round 2 · Cross-examination"));
+ PERSONAS.forEach(p=>{if(rec.cross[p.id]){const s=seatCard(p,"Cross-exam");setSeat(s,rec.cross[p.id]);area.appendChild(s.card);}});
+ if(rec.verdict){area.appendChild(roundTitle("The verdict"));
+  const v=document.createElement("div");v.className="seat verdict";
+  const b=document.createElement("div");b.className="body";b.textContent=rec.verdict;v.appendChild(b);area.appendChild(v);}
+ area.scrollIntoView({behavior:"smooth"});
+}
+function renderHistory(){
+ $("historyCard").style.display=history.length?"block":"none";
+ const list=$("historyList");list.innerHTML="";
+ history.forEach((rec,i)=>{
+  const d=document.createElement("div");d.className="hist";
+  const q=document.createElement("div");q.className="q";q.textContent=rec.q;
+  const w=document.createElement("div");w.className="when";w.textContent=new Date(rec.ts).toLocaleString();
+  d.append(q,w);d.addEventListener("click",()=>renderRecord(rec));list.appendChild(d);
+ });
+}
+/* ---------- Wiring ---------- */
+$("goBtn").addEventListener("click",()=>{
+ const q=$("q").value.trim();if(!q||busy)return;runDebate(q);
+});
+$("stopBtn").addEventListener("click",()=>{if(aborter)aborter.abort();});
+$("gearBtn").addEventListener("click",()=>{
+ const c=$("settingsCard");c.style.display=c.style.display==="none"?"block":"none";
+});
+$("saveKey").addEventListener("click",()=>{
+ settings.orKey=$("orKey").value.trim();
+ try{localStorage.setItem("roundtable.settings.v1",JSON.stringify(settings))}catch(e){}
+ panelInfo();
+});
+$("clearKey").addEventListener("click",()=>{
+ settings.orKey="";$("orKey").value="";
+ try{localStorage.setItem("roundtable.settings.v1",JSON.stringify(settings))}catch(e){}
+ panelInfo();
+});
+$("clearHist").addEventListener("click",()=>{history=[];try{localStorage.removeItem("roundtable.history.v1")}catch(e){}renderHistory();});
+if(settings.orKey)$("orKey").value=settings.orKey;
+panelInfo();renderHistory();
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
